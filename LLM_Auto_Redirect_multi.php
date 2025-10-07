@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       LLM Auto Redirect
  * Description:       Uses an LLM to suggest intelligent redirects for 404 errors found by the Redirection plugin.
- * Version:           1.1.0
+ * Version:           1.0.0
  * Author:            Gemini
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
@@ -69,34 +69,16 @@ class LLM_Auto_Redirect {
             'default' => ''
         ]);
         
-        register_setting( 'lar_settings_group', 'lar_openai_model', [
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'gpt-3.5-turbo'
-        ]);
-        
         register_setting( 'lar_settings_group', 'lar_openrouter_api_key', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
             'default' => ''
         ]);
         
-        register_setting( 'lar_settings_group', 'lar_openrouter_model', [
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'meta-llama/llama-3.3-70b-instruct:free'
-        ]);
-        
         register_setting( 'lar_settings_group', 'lar_gemini_api_key', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
             'default' => ''
-        ]);
-        
-        register_setting( 'lar_settings_group', 'lar_gemini_model', [
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'gemini-pro'
         ]);
 
         add_settings_section(
@@ -139,25 +121,9 @@ class LLM_Auto_Redirect {
         );
         
         add_settings_field(
-            'lar_openai_model',
-            'OpenAI Model',
-            [ $this, 'render_openai_model_field' ],
-            'llm-auto-redirect',
-            'lar_settings_section'
-        );
-        
-        add_settings_field(
             'lar_openrouter_api_key',
             'OpenRouter API Key',
             [ $this, 'render_openrouter_key_field' ],
-            'llm-auto-redirect',
-            'lar_settings_section'
-        );
-        
-        add_settings_field(
-            'lar_openrouter_model',
-            'OpenRouter Model',
-            [ $this, 'render_openrouter_model_field' ],
             'llm-auto-redirect',
             'lar_settings_section'
         );
@@ -169,19 +135,14 @@ class LLM_Auto_Redirect {
             'llm-auto-redirect',
             'lar_settings_section'
         );
-        
-        add_settings_field(
-            'lar_gemini_model',
-            'Gemini Model',
-            [ $this, 'render_gemini_model_field' ],
-            'llm-auto-redirect',
-            'lar_settings_section'
-        );
     }
 
+    /**
+     * Render the HTML for the provider selection field.
+     */
     public function render_provider_field() {
         $provider = get_option('lar_llm_provider', 'ollama');
-        echo '<select name="lar_llm_provider">';
+        echo '<select name="lar_llm_provider" id="lar_llm_provider">';
         echo '<option value="ollama"' . selected($provider, 'ollama', false) . '>Ollama (Local)</option>';
         echo '<option value="openai"' . selected($provider, 'openai', false) . '>OpenAI</option>';
         echo '<option value="openrouter"' . selected($provider, 'openrouter', false) . '>OpenRouter</option>';
@@ -189,62 +150,49 @@ class LLM_Auto_Redirect {
         echo '</select>';
     }
 
+    /**
+     * Render the HTML for the host input field.
+     */
     public function render_host_field() {
         $host = get_option('lar_ollama_host', 'http://192.168.1.2:11434');
         echo '<input type="text" name="lar_ollama_host" value="' . esc_attr( $host ) . '" class="regular-text">';
-        echo '<p class="description">URL of your Ollama instance</p>';
+        echo '<p class="description">URL of your Ollama instance (only for Ollama provider)</p>';
     }
     
+    /**
+     * Render the HTML for the model input field.
+     */
     public function render_model_field() {
         $model = get_option('lar_ollama_model', 'mistral-nemo:latest');
         echo '<input type="text" name="lar_ollama_model" value="' . esc_attr( $model ) . '" class="regular-text">';
-        echo '<p class="description">Name of the Ollama model to use</p>';
+        echo '<p class="description">Name of the Ollama model to use (only for Ollama provider)</p>';
     }
     
+    /**
+     * Render the HTML for the OpenAI API key field.
+     */
     public function render_openai_key_field() {
         $key = get_option('lar_openai_api_key', '');
         echo '<input type="password" name="lar_openai_api_key" value="' . esc_attr( $key ) . '" class="regular-text">';
-        echo '<p class="description">OpenAI API key</p>';
+        echo '<p class="description">OpenAI API key (only for OpenAI provider)</p>';
     }
     
-    public function render_openai_model_field() {
-        $model = get_option('lar_openai_model', 'gpt-3.5-turbo');
-        echo '<select name="lar_openai_model">';
-        echo '<option value="gpt-3.5-turbo"' . selected($model, 'gpt-3.5-turbo', false) . '>GPT-3.5 Turbo</option>';
-        echo '<option value="gpt-4"' . selected($model, 'gpt-4', false) . '>GPT-4</option>';
-        echo '<option value="gpt-4-turbo"' . selected($model, 'gpt-4-turbo', false) . '>GPT-4 Turbo</option>';
-        echo '</select>';
-    }
-    
+    /**
+     * Render the HTML for the OpenRouter API key field.
+     */
     public function render_openrouter_key_field() {
         $key = get_option('lar_openrouter_api_key', '');
         echo '<input type="password" name="lar_openrouter_api_key" value="' . esc_attr( $key ) . '" class="regular-text">';
-        echo '<p class="description">OpenRouter API key</p>';
+        echo '<p class="description">OpenRouter API key (only for OpenRouter provider)</p>';
     }
     
-    public function render_openrouter_model_field() {
-        $model = get_option('lar_openrouter_model', 'meta-llama/llama-3.3-70b-instruct:free');
-        echo '<select name="lar_openrouter_model">';
-        echo '<option value="meta-llama/llama-3.3-70b-instruct:free"' . selected($model, 'meta-llama/llama-3.3-70b-instruct:free', false) . '>Llama 3.3 70B (Free)</option>';
-        echo '<option value="microsoft/phi-3-mini-128k-instruct:free"' . selected($model, 'microsoft/phi-3-mini-128k-instruct:free', false) . '>Phi-3 Mini (Free)</option>';
-        echo '<option value="microsoft/phi-3-medium-128k-instruct:free"' . selected($model, 'microsoft/phi-3-medium-128k-instruct:free', false) . '>Phi-3 Medium (Free)</option>';
-        echo '<option value="google/gemma-2-9b-it:free"' . selected($model, 'google/gemma-2-9b-it:free', false) . '>Gemma 2 9B (Free)</option>';
-        echo '</select>';
-    }
-    
+    /**
+     * Render the HTML for the Gemini API key field.
+     */
     public function render_gemini_key_field() {
         $key = get_option('lar_gemini_api_key', '');
         echo '<input type="password" name="lar_gemini_api_key" value="' . esc_attr( $key ) . '" class="regular-text">';
-        echo '<p class="description">Google Gemini API key</p>';
-    }
-    
-    public function render_gemini_model_field() {
-        $model = get_option('lar_gemini_model', 'gemini-pro');
-        echo '<select name="lar_gemini_model">';
-        echo '<option value="gemini-pro"' . selected($model, 'gemini-pro', false) . '>Gemini Pro</option>';
-        echo '<option value="gemini-1.5-pro"' . selected($model, 'gemini-1.5-pro', false) . '>Gemini 1.5 Pro</option>';
-        echo '<option value="gemini-1.5-flash"' . selected($model, 'gemini-1.5-flash', false) . '>Gemini 1.5 Flash</option>';
-        echo '</select>';
+        echo '<p class="description">Google Gemini API key (only for Gemini provider)</p>';
     }
     
     /**
@@ -403,200 +351,72 @@ class LLM_Auto_Redirect {
             wp_send_json_error( 'Source URL is missing.', 400 );
         }
 
-        // Get provider and settings
-        $provider = get_option('lar_llm_provider', 'ollama');
-        
-        // Prepare the prompt
+        // --- Prepare the prompt for the LLM ---
         $site_url = get_site_url();
+        // Get some top-level pages to help the LLM make a good choice
         $pages = get_pages(['parent' => 0]);
-        $potential_targets = [$site_url . '/'];
+        $potential_targets = [
+            $site_url . '/',
+            get_permalink(get_option('page_for_posts')), // News/Blog page
+        ];
         foreach ($pages as $page) {
             $potential_targets[] = get_permalink($page->ID);
         }
+        // Add other key URLs
         $potential_targets[] = $site_url . '/news/';
         $potential_targets[] = $site_url . '/events/';
+
         $potential_targets = array_unique($potential_targets);
         $potential_targets_list = implode("\n", $potential_targets);
 
-        $system_prompt = "You are a WordPress redirect assistant for {$site_url}. Analyze a 404 URL and suggest the most relevant redirect target from the available pages. Return only the URL, nothing else.";
-        $user_prompt = "404 URL: {$site_url}{$source_url}\n\nAvailable pages:\n{$potential_targets_list}\n\nBest redirect target:";
+        $system_prompt = "You are an intelligent WordPress redirect assistant for the website {$site_url}. Your job is to analyze a 404 URL and a list of available pages on the website. Your goal is to find the most relevant page to redirect the 404 URL to. Prioritize top-level category pages like 'News' or 'Events' if the URL seems related to them. If no relevant page is found, you MUST return only the website's homepage URL. Your output must be a single, valid URL and nothing else. Do not add any explanation or formatting.";
+        
+        $user_prompt = "Analyze this 404 URL: {$site_url}{$source_url}\n\nHere is a list of potential target pages:\n{$potential_targets_list}\n\nWhat is the best redirect target? Return only the URL.";
 
-        // Call the appropriate LLM provider
-        switch ($provider) {
-            case 'ollama':
-                $response = $this->call_ollama($system_prompt, $user_prompt);
-                break;
-            case 'openai':
-                $response = $this->call_openai($system_prompt, $user_prompt);
-                break;
-            case 'openrouter':
-                $response = $this->call_openrouter($system_prompt, $user_prompt);
-                break;
-            case 'gemini':
-                $response = $this->call_gemini($system_prompt, $user_prompt);
-                break;
-            default:
-                wp_send_json_error('Invalid LLM provider selected.', 400);
-        }
-
-        if (is_wp_error($response)) {
-            wp_send_json_error($response->get_error_message(), 500);
-        }
-
-        $suggested_url = trim($response);
-        if (filter_var($suggested_url, FILTER_VALIDATE_URL)) {
-            wp_send_json_success(['suggestion' => $suggested_url]);
-        } else {
-            wp_send_json_error('LLM returned an invalid URL format.', 500);
-        }
-    }
-
-    private function call_ollama($system_prompt, $user_prompt) {
-        $host = get_option('lar_ollama_host', 'http://192.168.1.2:11434');
-        $model = get_option('lar_ollama_model', 'mistral-nemo:latest');
-        $api_url = rtrim($host, '/') . '/api/generate';
+        // --- Call Ollama API ---
+        $ollama_host = get_option('lar_ollama_host', 'http://192.168.1.2:11434');
+        $ollama_model = get_option('lar_ollama_model', 'mistral-nemo:latest');
+        $api_url = rtrim($ollama_host, '/') . '/api/generate';
 
         $response = wp_remote_post($api_url, [
+            'method'  => 'POST',
             'headers' => ['Content-Type' => 'application/json'],
-            'body' => json_encode([
-                'model' => $model,
+            'body'    => json_encode([
+                'model' => $ollama_model,
                 'prompt' => $system_prompt . "\n\n" . $user_prompt,
                 'stream' => false
             ]),
             'timeout' => 30,
         ]);
-
-        if (is_wp_error($response)) {
-            return new WP_Error('ollama_error', 'Cannot connect to Ollama at ' . $host . '. Error: ' . $response->get_error_message());
-        }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
         
-        if (isset($data['response'])) {
-            return $data['response'];
-        }
-        
-        return new WP_Error('ollama_parse', 'Could not parse Ollama response');
-    }
-
-    private function call_openai($system_prompt, $user_prompt) {
-        $api_key = get_option('lar_openai_api_key');
-        $model = get_option('lar_openai_model', 'gpt-3.5-turbo');
-        if (empty($api_key)) {
-            return new WP_Error('openai_key', 'OpenAI API key not set');
-        }
-
-        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $api_key
-            ],
-            'body' => json_encode([
-                'model' => $model,
-                'messages' => [
-                    ['role' => 'system', 'content' => $system_prompt],
-                    ['role' => 'user', 'content' => $user_prompt]
-                ],
-                'max_tokens' => 100
-            ]),
-            'timeout' => 30,
-        ]);
-
-        if (is_wp_error($response)) {
-            return new WP_Error('openai_error', 'OpenAI API failed: ' . $response->get_error_message());
-        }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (isset($data['choices'][0]['message']['content'])) {
-            return $data['choices'][0]['message']['content'];
-        }
-        
-        return new WP_Error('openai_parse', 'Could not parse OpenAI response');
-    }
-
-    private function call_openrouter($system_prompt, $user_prompt) {
-        $api_key = get_option('lar_openrouter_api_key');
-        $model = get_option('lar_openrouter_model', 'meta-llama/llama-3.3-70b-instruct:free');
-        if (empty($api_key)) {
-            return new WP_Error('openrouter_key', 'OpenRouter API key not set');
-        }
-
-        $response = wp_remote_post('https://openrouter.ai/api/v1/chat/completions', [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $api_key,
-                'HTTP-Referer' => get_site_url(),
-                'X-Title' => 'LLM Auto Redirect'
-            ],
-            'body' => json_encode([
-                'model' => $model,
-                'messages' => [
-                    ['role' => 'system', 'content' => $system_prompt],
-                    ['role' => 'user', 'content' => $user_prompt]
-                ]
-            ]),
-            'timeout' => 30,
-        ]);
-
-        if (is_wp_error($response)) {
-            return new WP_Error('openrouter_error', 'OpenRouter API failed: ' . $response->get_error_message());
+        if ( is_wp_error($response) ) {
+            $error_msg = $response->get_error_message();
+            error_log('Ollama connection error: ' . $error_msg);
+            wp_send_json_error( 'Cannot connect to Ollama at 192.168.5.157:11434. Error: ' . $error_msg, 500 );
         }
 
         $response_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        // Log response for debugging
-        error_log('OpenRouter Response Code: ' . $response_code);
-        error_log('OpenRouter Response Body: ' . $body);
-        
         if ($response_code !== 200) {
-            $error_msg = isset($data['error']['message']) ? $data['error']['message'] : 'HTTP ' . $response_code;
-            return new WP_Error('openrouter_http', 'OpenRouter API error: ' . $error_msg);
-        }
-        
-        if (isset($data['choices'][0]['message']['content'])) {
-            return $data['choices'][0]['message']['content'];
-        }
-        
-        return new WP_Error('openrouter_parse', 'Could not parse OpenRouter response. Response: ' . substr($body, 0, 200));
-    }
-
-    private function call_gemini($system_prompt, $user_prompt) {
-        $api_key = get_option('lar_gemini_api_key');
-        $model = get_option('lar_gemini_model', 'gemini-pro');
-        if (empty($api_key)) {
-            return new WP_Error('gemini_key', 'Gemini API key not set');
-        }
-
-        $response = wp_remote_post('https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $api_key, [
-            'headers' => ['Content-Type' => 'application/json'],
-            'body' => json_encode([
-                'contents' => [[
-                    'parts' => [['text' => $user_prompt]]
-                ]],
-                'systemInstruction' => [
-                    'parts' => [['text' => $system_prompt]]
-                ]
-            ]),
-            'timeout' => 30,
-        ]);
-
-        if (is_wp_error($response)) {
-            return new WP_Error('gemini_error', 'Gemini API failed: ' . $response->get_error_message());
+            error_log('Ollama HTTP error: ' . $response_code);
+            wp_send_json_error( 'Ollama returned HTTP ' . $response_code, 500 );
         }
 
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
         
-        if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-            return $data['candidates'][0]['content']['parts'][0]['text'];
+        if ( isset($data['response']) ) {
+            $suggested_url = trim($data['response']);
+            // Basic URL validation
+            if (filter_var($suggested_url, FILTER_VALIDATE_URL)) {
+                 wp_send_json_success( ['suggestion' => $suggested_url] );
+            } else {
+                 wp_send_json_error( 'LLM returned an invalid URL format.', 500 );
+            }
+        } else {
+            // Log the full error for debugging
+            error_log('LLM Auto Redirect Error: ' . print_r($data, true));
+            wp_send_json_error( 'Could not parse Ollama response.', 500 );
         }
-        
-        return new WP_Error('gemini_parse', 'Could not parse Gemini response');
     }
 
     /**
