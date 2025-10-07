@@ -26,6 +26,8 @@ class LLM_Auto_Redirect {
         add_action( 'wp_ajax_lar_get_llm_suggestion', [ $this, 'handle_llm_suggestion_ajax' ] );
         // Handle the AJAX request for creating a redirect
         add_action( 'wp_ajax_lar_create_redirect', [ $this, 'handle_create_redirect_ajax' ] );
+        // Handle bulk processing
+        add_action( 'wp_ajax_lar_bulk_process', [ $this, 'handle_bulk_process_ajax' ] );
     }
 
     /**
@@ -97,6 +99,12 @@ class LLM_Auto_Redirect {
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
             'default' => 'gemini-pro'
+        ]);
+
+        register_setting( 'lar_settings_group', 'lar_ignore_patterns', [
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_textarea_field',
+            'default' => ''
         ]);
 
         add_settings_section(
@@ -177,6 +185,14 @@ class LLM_Auto_Redirect {
             'llm-auto-redirect',
             'lar_settings_section'
         );
+
+        add_settings_field(
+            'lar_ignore_patterns',
+            'Ignore URL Patterns',
+            [ $this, 'render_ignore_patterns_field' ],
+            'llm-auto-redirect',
+            'lar_settings_section'
+        );
     }
 
     public function render_provider_field() {
@@ -246,6 +262,33 @@ class LLM_Auto_Redirect {
         echo '<option value="gemini-1.5-flash"' . selected($model, 'gemini-1.5-flash', false) . '>Gemini 1.5 Flash</option>';
         echo '</select>';
     }
+
+    public function render_ignore_patterns_field() {
+        $patterns = get_option('lar_ignore_patterns', '');
+        echo '<textarea name="lar_ignore_patterns" rows="5" cols="50" placeholder="wp-admin&#10;wp-login.php&#10;*.css&#10;*.js">' . esc_textarea($patterns) . '</textarea>';
+        echo '<p class="description">One pattern per line. Use * for wildcards. Built-in spam filters are always active.</p>';
+    }
+
+    private function should_ignore_url($url) {
+        // Built-in patterns to ignore
+        $builtin_patterns = [
+            'wp-admin', 'wp-login.php', 'xmlrpc.php', 'wp-config.php',
+            '*.css', '*.js', '*.png', '*.jpg', '*.gif', '*.ico', '*.pdf',
+            '*.php', '*.asp', '*.jsp'
+        ];
+        
+        // User-defined patterns
+        $user_patterns = array_filter(array_map('trim', explode("\n", get_option('lar_ignore_patterns', ''))));
+        $all_patterns = array_merge($builtin_patterns, $user_patterns);
+        
+        foreach ($all_patterns as $pattern) {
+            if (fnmatch($pattern, $url) || strpos($url, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
     
     /**
      * Render the main admin page.
@@ -255,19 +298,23 @@ class LLM_Auto_Redirect {
         $log_table = $wpdb->prefix . 'redirection_404';
         $redirect_table = $wpdb->prefix . 'redirection_items';
         
+        // Get all results first, then filter
+        $all_query = "SELECT DISTINCT l.url, l.created FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL ORDER BY l.created DESC";
+        $all_results = $wpdb->get_results($all_query);
+        
+        // Filter out ignored URLs
+        $filtered_results = array_filter($all_results, function($row) {
+            return !$this->should_ignore_url($row->url);
+        });
+        
         // Pagination
         $per_page = 20;
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         $offset = ($current_page - 1) * $per_page;
         
-        // Get total count
-        $count_query = "SELECT COUNT(DISTINCT l.url) FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL";
-        $total_items = $wpdb->get_var($count_query);
+        $total_items = count($filtered_results);
         $total_pages = ceil($total_items / $per_page);
-        
-        // Get paginated results
-        $query = "SELECT DISTINCT l.url, l.created FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL ORDER BY l.created DESC LIMIT {$per_page} OFFSET {$offset}";
-        $results = $wpdb->get_results($query);
+        $results = array_slice($filtered_results, $offset, $per_page);
         ?>
         <div class="wrap">
             <h1>LLM Auto Redirect</h1>
@@ -285,6 +332,13 @@ class LLM_Auto_Redirect {
             
             <h2>Recent 404 Errors</h2>
             <p>Showing <?php echo count($results); ?> of <?php echo $total_items; ?> 404 entries without redirects (Page <?php echo $current_page; ?> of <?php echo $total_pages; ?>)</p>
+            
+            <?php if ($total_items > 0): ?>
+            <p>
+                <button id="lar-bulk-process" class="button button-secondary">Bulk Process All <?php echo $total_items; ?> URLs</button>
+                <span id="lar-bulk-status"></span>
+            </p>
+            <?php endif; ?>
             
             <?php if ($results): ?>
             <table class="wp-list-table widefat fixed striped">
@@ -413,6 +467,41 @@ class LLM_Auto_Redirect {
                     });
                 });
             });
+            
+            // Bulk process handler
+            const bulkBtn = document.getElementById('lar-bulk-process');
+            if (bulkBtn) {
+                bulkBtn.addEventListener('click', function() {
+                    if (!confirm('Process all 404s automatically? This may take several minutes.')) return;
+                    
+                    this.disabled = true;
+                    this.textContent = 'Processing...';
+                    const status = document.getElementById('lar-bulk-status');
+                    status.textContent = 'Starting bulk process...';
+                    
+                    fetch(ajaxurl, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                        body: new URLSearchParams({
+                            action: 'lar_bulk_process',
+                            nonce: '<?php echo wp_create_nonce("lar_ajax_nonce"); ?>'
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            status.textContent = `Completed! Processed ${data.data.processed} URLs, created ${data.data.created} redirects.`;
+                            status.style.color = 'green';
+                            setTimeout(() => location.reload(), 2000);
+                        } else {
+                            status.textContent = 'Error: ' + data.data;
+                            status.style.color = 'red';
+                            this.disabled = false;
+                            this.textContent = 'Bulk Process All';
+                        }
+                    });
+                });
+            }
         });
         </script>
         <?php
@@ -433,6 +522,16 @@ class LLM_Auto_Redirect {
             wp_send_json_error( 'Source URL is missing.', 400 );
         }
 
+        $suggestion = $this->get_llm_suggestion($source_url);
+        
+        if ($suggestion) {
+            wp_send_json_success(['suggestion' => $suggestion]);
+        } else {
+            wp_send_json_error('Failed to get suggestion from LLM.');
+        }
+    }
+
+    private function get_llm_suggestion($source_url) {
         // Get provider and settings
         $provider = get_option('lar_llm_provider', 'ollama');
         
@@ -466,19 +565,15 @@ class LLM_Auto_Redirect {
                 $response = $this->call_gemini($system_prompt, $user_prompt);
                 break;
             default:
-                wp_send_json_error('Invalid LLM provider selected.', 400);
+                return false;
         }
 
         if (is_wp_error($response)) {
-            wp_send_json_error($response->get_error_message(), 500);
+            return false;
         }
 
         $suggested_url = trim($response);
-        if (filter_var($suggested_url, FILTER_VALIDATE_URL)) {
-            wp_send_json_success(['suggestion' => $suggested_url]);
-        } else {
-            wp_send_json_error('LLM returned an invalid URL format.', 500);
-        }
+        return filter_var($suggested_url, FILTER_VALIDATE_URL) ? $suggested_url : false;
     }
 
     private function call_ollama($system_prompt, $user_prompt) {
@@ -670,6 +765,55 @@ class LLM_Auto_Redirect {
             $error_msg = is_wp_error($result) ? $result->get_error_message() : 'Unknown error';
             wp_send_json_error( 'Failed to create redirect: ' . $error_msg, 500 );
         }
+    }
+
+    public function handle_bulk_process_ajax() {
+        check_ajax_referer('lar_ajax_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permission denied.', 403);
+        }
+        
+        global $wpdb;
+        $log_table = $wpdb->prefix . 'redirection_404';
+        $redirect_table = $wpdb->prefix . 'redirection_items';
+        
+        // Get all 404s without redirects
+        $all_query = "SELECT DISTINCT l.url FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL";
+        $all_results = $wpdb->get_results($all_query);
+        
+        // Filter out ignored URLs
+        $urls_to_process = array_filter($all_results, function($row) {
+            return !$this->should_ignore_url($row->url);
+        });
+        
+        $processed = 0;
+        $created = 0;
+        
+        foreach ($urls_to_process as $row) {
+            $suggestion = $this->get_llm_suggestion($row->url);
+            if ($suggestion && $suggestion !== home_url('/')) {
+                // Create redirect
+                if (class_exists('Red_Item')) {
+                    $result = Red_Item::create([
+                        'url' => $row->url,
+                        'action_data' => ['url' => $suggestion],
+                        'match_type' => 'url',
+                        'action_type' => 'url',
+                        'action_code' => 301,
+                        'group_id' => 1,
+                    ]);
+                    
+                    if ($result && !is_wp_error($result)) {
+                        $wpdb->delete("{$wpdb->prefix}redirection_404", ['url' => $row->url]);
+                        $created++;
+                    }
+                }
+            }
+            $processed++;
+        }
+        
+        wp_send_json_success(['processed' => $processed, 'created' => $created]);
     }
 }
 
