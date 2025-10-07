@@ -348,11 +348,11 @@ class LLM_Auto_Redirect {
         // Use the Redirection plugin's API to create the redirect
         $result = Red_Item::create( [
             'url'           => $source_url,
-            'action_data'   => $target_url,
+            'action_data'   => ['url' => $target_url],
             'match_type'    => 'url',
             'action_type'   => 'url',
             'action_code'   => 301,
-            'group_id'      => 1, // Default "Redirections" group
+            'group_id'      => 1,
         ] );
 
         if ($result && !is_wp_error($result)) {
