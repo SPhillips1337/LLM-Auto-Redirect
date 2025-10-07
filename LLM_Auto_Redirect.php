@@ -255,7 +255,18 @@ class LLM_Auto_Redirect {
         $log_table = $wpdb->prefix . 'redirection_404';
         $redirect_table = $wpdb->prefix . 'redirection_items';
         
-        $query = "SELECT DISTINCT l.url, l.created FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL ORDER BY l.created DESC LIMIT 20";
+        // Pagination
+        $per_page = 20;
+        $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        $offset = ($current_page - 1) * $per_page;
+        
+        // Get total count
+        $count_query = "SELECT COUNT(DISTINCT l.url) FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL";
+        $total_items = $wpdb->get_var($count_query);
+        $total_pages = ceil($total_items / $per_page);
+        
+        // Get paginated results
+        $query = "SELECT DISTINCT l.url, l.created FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL ORDER BY l.created DESC LIMIT {$per_page} OFFSET {$offset}";
         $results = $wpdb->get_results($query);
         ?>
         <div class="wrap">
@@ -273,7 +284,7 @@ class LLM_Auto_Redirect {
             <hr>
             
             <h2>Recent 404 Errors</h2>
-            <p>Found <?php echo count($results); ?> recent 404 entries without redirects</p>
+            <p>Showing <?php echo count($results); ?> of <?php echo $total_items; ?> 404 entries without redirects (Page <?php echo $current_page; ?> of <?php echo $total_pages; ?>)</p>
             
             <?php if ($results): ?>
             <table class="wp-list-table widefat fixed striped">
@@ -299,6 +310,25 @@ class LLM_Auto_Redirect {
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            
+            <?php if ($total_pages > 1): ?>
+            <div class="tablenav">
+                <div class="tablenav-pages">
+                    <?php
+                    $page_links = paginate_links([
+                        'base' => add_query_arg('paged', '%#%'),
+                        'format' => '',
+                        'prev_text' => '&laquo;',
+                        'next_text' => '&raquo;',
+                        'total' => $total_pages,
+                        'current' => $current_page
+                    ]);
+                    echo $page_links;
+                    ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            
             <?php endif; ?>
         </div>
         
