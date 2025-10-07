@@ -334,8 +334,8 @@ class LLM_Auto_Redirect {
         }
         
         // Make sure the function from the Redirection plugin exists
-        if ( ! function_exists( 'red_create_redirect' ) ) {
-            wp_send_json_error( 'The function `red_create_redirect` from the Redirection plugin is not available.', 500 );
+        if ( ! class_exists( 'Red_Item' ) ) {
+            wp_send_json_error( 'The Redirection plugin classes are not available.', 500 );
         }
 
         $source_url = isset($_POST['source_url']) ? sanitize_text_field(wp_unslash($_POST['source_url'])) : '';
@@ -347,21 +347,22 @@ class LLM_Auto_Redirect {
         
         // Use the Redirection plugin's API to create the redirect
         $result = Red_Item::create( [
-            'source_url'    => $source_url,
-            'target_url'    => $target_url,
+            'url'           => $source_url,
+            'action_data'   => $target_url,
             'match_type'    => 'url',
             'action_type'   => 'url',
             'action_code'   => 301,
             'group_id'      => 1, // Default "Redirections" group
         ] );
 
-        if ($result) {
+        if ($result && !is_wp_error($result)) {
             // Also, let's delete the 404 log entry for this URL
             global $wpdb;
             $wpdb->delete( "{$wpdb->prefix}redirection_404", [ 'url' => $source_url ] );
             wp_send_json_success( ['message' => 'Redirect created successfully!'] );
         } else {
-            wp_send_json_error( 'Failed to create redirect in the Redirection plugin.', 500 );
+            $error_msg = is_wp_error($result) ? $result->get_error_message() : 'Unknown error';
+            wp_send_json_error( 'Failed to create redirect: ' . $error_msg, 500 );
         }
     }
 }
