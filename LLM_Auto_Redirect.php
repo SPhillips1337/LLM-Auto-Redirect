@@ -475,31 +475,70 @@ class LLM_Auto_Redirect {
                     if (!confirm('Process all 404s automatically? This may take several minutes.')) return;
                     
                     this.disabled = true;
-                    this.textContent = 'Processing...';
                     const status = document.getElementById('lar-bulk-status');
-                    status.textContent = 'Starting bulk process...';
                     
-                    fetch(ajaxurl, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                        body: new URLSearchParams({
-                            action: 'lar_bulk_process',
-                            nonce: '<?php echo wp_create_nonce("lar_ajax_nonce"); ?>'
+                    let totalProcessed = 0;
+                    let totalCreated = 0;
+                    let offset = 0;
+                    let debugLog = [];
+                    
+                    const processBatch = () => {
+                        status.innerHTML = `Processing batch... (${totalProcessed} processed, ${totalCreated} created)`;
+                        
+                        fetch(ajaxurl, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                            body: new URLSearchParams({
+                                action: 'lar_bulk_process',
+                                nonce: '<?php echo wp_create_nonce("lar_ajax_nonce"); ?>',
+                                batch_size: 10,
+                                offset: offset
+                            })
                         })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            status.textContent = `Completed! Processed ${data.data.processed} URLs, created ${data.data.created} redirects.`;
-                            status.style.color = 'green';
-                            setTimeout(() => location.reload(), 2000);
-                        } else {
-                            status.textContent = 'Error: ' + data.data;
-                            status.style.color = 'red';
-                            this.disabled = false;
-                            this.textContent = 'Bulk Process All';
-                        }
-                    });
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                totalProcessed += data.data.processed;
+                                totalCreated += data.data.created;
+                                offset = data.data.offset;
+                                
+                                if (data.data.debug) {
+                                    debugLog = debugLog.concat(data.data.debug);
+                                }
+                                
+                                const progress = data.data.progress || 0;
+                                status.innerHTML = `Progress: ${progress}% (${totalProcessed}/${data.data.total} processed, ${totalCreated} redirects created)`;
+                                
+                                if (data.data.errors && data.data.errors.length > 0) {
+                                    console.warn('Bulk process errors:', data.data.errors);
+                                    status.innerHTML += `<br><span style="color: orange;">Warnings: ${data.data.errors.length}</span>`;
+                                }
+                                
+                                if (data.data.complete) {
+                                    status.innerHTML = `<span style="color: green;">Completed! Processed ${totalProcessed} URLs, created ${totalCreated} redirects.</span>`;
+                                    if (debugLog.length > 0) {
+                                        console.log('Bulk process debug log:', debugLog);
+                                        status.innerHTML += '<br><small>Check browser console for debug details.</small>';
+                                    }
+                                    setTimeout(() => location.reload(), 3000);
+                                } else {
+                                    // Continue with next batch
+                                    setTimeout(processBatch, 1000);
+                                }
+                            } else {
+                                status.innerHTML = `<span style="color: red;">Error: ${data.data}</span>`;
+                                bulkBtn.disabled = false;
+                                bulkBtn.textContent = 'Bulk Process All';
+                            }
+                        })
+                        .catch(error => {
+                            status.innerHTML = `<span style="color: red;">Network error: ${error.message}</span>`;
+                            bulkBtn.disabled = false;
+                            bulkBtn.textContent = 'Bulk Process All';
+                        });
+                    };
+                    
+                    processBatch();
                 });
             }
         });
@@ -783,12 +822,27 @@ class LLM_Auto_Redirect {
         $log_table = $wpdb->prefix . 'redirection_404';
         $redirect_table = $wpdb->prefix . 'redirection_items';
         
-        // Get all 404s without redirects (limit to prevent timeout)
-        $all_query = "SELECT DISTINCT l.url FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL LIMIT 50";
+        // Get batch parameters
+        $batch_size = isset($_POST['batch_size']) ? intval($_POST['batch_size']) : 10;
+        $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+        
+        // Get all 404s without redirects
+        $all_query = "SELECT DISTINCT l.url FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL LIMIT {$batch_size} OFFSET {$offset}";
         $all_results = $wpdb->get_results($all_query);
         
+        // Get total count for progress
+        $total_query = "SELECT COUNT(DISTINCT l.url) as total FROM {$log_table} l LEFT JOIN {$redirect_table} r ON l.url = r.url WHERE r.id IS NULL";
+        $total_count = $wpdb->get_var($total_query);
+        
         if (empty($all_results)) {
-            wp_send_json_success(['processed' => 0, 'created' => 0, 'message' => 'No 404s to process']);
+            wp_send_json_success([
+                'processed' => 0, 
+                'created' => 0, 
+                'total' => $total_count,
+                'offset' => $offset,
+                'complete' => true,
+                'message' => 'No more 404s to process'
+            ]);
         }
         
         // Filter out ignored URLs
@@ -799,17 +853,21 @@ class LLM_Auto_Redirect {
         $processed = 0;
         $created = 0;
         $errors = [];
+        $debug = [];
         
         foreach ($urls_to_process as $row) {
             try {
+                $debug[] = "Processing: {$row->url}";
+                
                 // Check memory usage
                 $memory_mb = memory_get_usage(true) / 1024 / 1024;
                 if ($memory_mb > 400) {
-                    $errors[] = "Memory limit approaching ({$memory_mb}MB) - stopping bulk process";
+                    $errors[] = "Memory limit approaching ({$memory_mb}MB) - stopping batch";
                     break;
                 }
                 
                 $suggestion = $this->get_llm_suggestion($row->url);
+                $debug[] = "LLM suggestion for {$row->url}: " . ($suggestion ?: 'none');
                 
                 if ($suggestion && $suggestion !== home_url('/')) {
                     // Create redirect
@@ -826,6 +884,7 @@ class LLM_Auto_Redirect {
                         if ($result && !is_wp_error($result)) {
                             $wpdb->delete("{$wpdb->prefix}redirection_404", ['url' => $row->url]);
                             $created++;
+                            $debug[] = "Created redirect: {$row->url} -> {$suggestion}";
                         } else {
                             $error_msg = is_wp_error($result) ? $result->get_error_message() : 'Unknown error';
                             $errors[] = "Failed to create redirect for {$row->url}: {$error_msg}";
@@ -834,23 +893,32 @@ class LLM_Auto_Redirect {
                         $errors[] = "Red_Item class not available";
                         break;
                     }
+                } else {
+                    $debug[] = "Skipped {$row->url} - no valid suggestion";
                 }
                 
                 $processed++;
                 
                 // Add small delay to prevent overwhelming the LLM
-                usleep(100000); // 0.1 second
+                usleep(500000); // 0.5 second
                 
             } catch (Exception $e) {
                 $errors[] = "Error processing {$row->url}: " . $e->getMessage();
+                $debug[] = "Exception for {$row->url}: " . $e->getMessage();
             }
         }
+        
+        $new_offset = $offset + $batch_size;
+        $complete = $new_offset >= $total_count;
         
         $response = [
             'processed' => $processed,
             'created' => $created,
-            'total_found' => count($all_results),
-            'filtered_count' => count($urls_to_process)
+            'total' => $total_count,
+            'offset' => $new_offset,
+            'complete' => $complete,
+            'progress' => round(($new_offset / $total_count) * 100, 1),
+            'debug' => $debug
         ];
         
         if (!empty($errors)) {
