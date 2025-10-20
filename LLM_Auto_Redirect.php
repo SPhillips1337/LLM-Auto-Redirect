@@ -563,10 +563,12 @@ class LLM_Auto_Redirect {
 
         $suggestion = $this->get_llm_suggestion($source_url);
         
-        if ($suggestion) {
+        if (is_wp_error($suggestion)) {
+            wp_send_json_error($suggestion->get_error_message());
+        } elseif ($suggestion) {
             wp_send_json_success(['suggestion' => $suggestion]);
         } else {
-            wp_send_json_error('Failed to get suggestion from LLM.');
+            wp_send_json_error('No valid suggestion received from LLM.');
         }
     }
 
@@ -604,15 +606,19 @@ class LLM_Auto_Redirect {
                 $response = $this->call_gemini($system_prompt, $user_prompt);
                 break;
             default:
-                return false;
+                return new WP_Error('invalid_provider', 'Invalid LLM provider: ' . $provider);
         }
 
         if (is_wp_error($response)) {
-            return false;
+            return $response;
         }
 
         $suggested_url = trim($response);
-        return filter_var($suggested_url, FILTER_VALIDATE_URL) ? $suggested_url : false;
+        if (!filter_var($suggested_url, FILTER_VALIDATE_URL)) {
+            return new WP_Error('invalid_url', 'LLM returned invalid URL: ' . $suggested_url);
+        }
+        
+        return $suggested_url;
     }
 
     private function call_ollama($system_prompt, $user_prompt) {
@@ -867,9 +873,11 @@ class LLM_Auto_Redirect {
                 }
                 
                 $suggestion = $this->get_llm_suggestion($row->url);
-                $debug[] = "LLM suggestion for {$row->url}: " . ($suggestion ?: 'none');
                 
-                if ($suggestion && $suggestion !== home_url('/')) {
+                if (is_wp_error($suggestion)) {
+                    $debug[] = "LLM error for {$row->url}: " . $suggestion->get_error_message();
+                } elseif ($suggestion && $suggestion !== home_url('/')) {
+                    $debug[] = "LLM suggestion for {$row->url}: " . $suggestion;
                     // Create redirect
                     if (class_exists('Red_Item')) {
                         $result = Red_Item::create([
@@ -894,7 +902,7 @@ class LLM_Auto_Redirect {
                         break;
                     }
                 } else {
-                    $debug[] = "Skipped {$row->url} - no valid suggestion";
+                    $debug[] = "Skipped {$row->url} - no valid suggestion or homepage redirect";
                 }
                 
                 $processed++;
