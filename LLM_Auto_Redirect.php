@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       LLM Auto Redirect
  * Description:       Uses an LLM to suggest intelligent redirects for 404 errors found by the Redirection plugin.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Author:            Gemini
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
@@ -71,10 +71,16 @@ class LLM_Auto_Redirect {
             'default' => ''
         ]);
         
+        register_setting( 'lar_settings_group', 'lar_openai_base_url', [
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'https://api.openai.com/v1'
+        ]);
+        
         register_setting( 'lar_settings_group', 'lar_openai_model', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'gpt-3.5-turbo'
+            'default' => 'gpt-4o-mini'
         ]);
         
         register_setting( 'lar_settings_group', 'lar_openrouter_api_key', [
@@ -86,7 +92,7 @@ class LLM_Auto_Redirect {
         register_setting( 'lar_settings_group', 'lar_openrouter_model', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'meta-llama/llama-3.3-70b-instruct:free'
+            'default' => 'openrouter/free'
         ]);
         
         register_setting( 'lar_settings_group', 'lar_gemini_api_key', [
@@ -150,6 +156,14 @@ class LLM_Auto_Redirect {
             'lar_openai_model',
             'OpenAI Model',
             [ $this, 'render_openai_model_field' ],
+            'llm-auto-redirect',
+            'lar_settings_section'
+        );
+        
+        add_settings_field(
+            'lar_openai_base_url',
+            'OpenAI Base URL',
+            [ $this, 'render_openai_base_url_field' ],
             'llm-auto-redirect',
             'lar_settings_section'
         );
@@ -224,12 +238,15 @@ class LLM_Auto_Redirect {
     }
     
     public function render_openai_model_field() {
-        $model = get_option('lar_openai_model', 'gpt-3.5-turbo');
-        echo '<select name="lar_openai_model">';
-        echo '<option value="gpt-3.5-turbo"' . selected($model, 'gpt-3.5-turbo', false) . '>GPT-3.5 Turbo</option>';
-        echo '<option value="gpt-4"' . selected($model, 'gpt-4', false) . '>GPT-4</option>';
-        echo '<option value="gpt-4-turbo"' . selected($model, 'gpt-4-turbo', false) . '>GPT-4 Turbo</option>';
-        echo '</select>';
+        $model = get_option('lar_openai_model', 'gpt-4o-mini');
+        echo '<input type="text" name="lar_openai_model" value="' . esc_attr( $model ) . '" class="regular-text">';
+        echo '<p class="description">OpenAI model name (e.g., gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo)</p>';
+    }
+    
+    public function render_openai_base_url_field() {
+        $url = get_option('lar_openai_base_url', 'https://api.openai.com/v1');
+        echo '<input type="text" name="lar_openai_base_url" value="' . esc_attr( $url ) . '" class="regular-text">';
+        echo '<p class="description">Base URL for OpenAI-compatible API (e.g., https://api.openai.com/v1, https://api.groq.com/openai/v1)</p>';
     }
     
     public function render_openrouter_key_field() {
@@ -239,13 +256,9 @@ class LLM_Auto_Redirect {
     }
     
     public function render_openrouter_model_field() {
-        $model = get_option('lar_openrouter_model', 'meta-llama/llama-3.3-70b-instruct:free');
-        echo '<select name="lar_openrouter_model">';
-        echo '<option value="meta-llama/llama-3.3-70b-instruct:free"' . selected($model, 'meta-llama/llama-3.3-70b-instruct:free', false) . '>Llama 3.3 70B (Free)</option>';
-        echo '<option value="microsoft/phi-3-mini-128k-instruct:free"' . selected($model, 'microsoft/phi-3-mini-128k-instruct:free', false) . '>Phi-3 Mini (Free)</option>';
-        echo '<option value="microsoft/phi-3-medium-128k-instruct:free"' . selected($model, 'microsoft/phi-3-medium-128k-instruct:free', false) . '>Phi-3 Medium (Free)</option>';
-        echo '<option value="google/gemma-2-9b-it:free"' . selected($model, 'google/gemma-2-9b-it:free', false) . '>Gemma 2 9B (Free)</option>';
-        echo '</select>';
+        $model = get_option('lar_openrouter_model', 'openrouter/free');
+        echo '<input type="text" name="lar_openrouter_model" value="' . esc_attr( $model ) . '" class="regular-text">';
+        echo '<p class="description">OpenRouter model (e.g., openrouter/free for free models, or a specific model like meta-llama/llama-3.3-70b-instruct:free)</p>';
     }
     
     public function render_gemini_key_field() {
@@ -652,12 +665,13 @@ class LLM_Auto_Redirect {
 
     private function call_openai($system_prompt, $user_prompt) {
         $api_key = get_option('lar_openai_api_key');
-        $model = get_option('lar_openai_model', 'gpt-3.5-turbo');
+        $model = get_option('lar_openai_model', 'gpt-4o-mini');
+        $base_url = rtrim(get_option('lar_openai_base_url', 'https://api.openai.com/v1'), '/');
         if (empty($api_key)) {
             return new WP_Error('openai_key', 'OpenAI API key not set');
         }
 
-        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+        $response = wp_remote_post($base_url . '/chat/completions', [
             'headers' => [
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . $api_key
@@ -689,7 +703,7 @@ class LLM_Auto_Redirect {
 
     private function call_openrouter($system_prompt, $user_prompt) {
         $api_key = get_option('lar_openrouter_api_key');
-        $model = get_option('lar_openrouter_model', 'meta-llama/llama-3.3-70b-instruct:free');
+        $model = get_option('lar_openrouter_model', 'openrouter/free');
         if (empty($api_key)) {
             return new WP_Error('openrouter_key', 'OpenRouter API key not set');
         }
