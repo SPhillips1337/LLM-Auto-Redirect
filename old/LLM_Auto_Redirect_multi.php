@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       LLM Auto Redirect
  * Description:       Uses an LLM to suggest intelligent redirects for 404 errors found by the Redirection plugin.
- * Version:           1.0.0
+ * Version:           1.3.0
  * Author:            Gemini
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
