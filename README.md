@@ -22,16 +22,46 @@ Once you're happy with the suggestion, a "Create" button automatically adds the 
 
 IMPORTANT: You must have the "Redirection" plugin by John Godley installed and activated.
 
-Create a folder named llm-auto-redirect in your /wp-content/plugins/ directory.
+=== Installer Script ===
 
-Place the llm-auto-redirect.php, admin-page-view.php, and readme.txt files into this folder.
+A hardened installer is available for trusted environments. Review the script before running it, especially when using the download form below.
+
+Raw installer URL:
+
+https://raw.githubusercontent.com/SPhillips1337/LLM-Auto-Redirect/main/install.sh
+
+Download, inspect, then run:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/SPhillips1337/LLM-Auto-Redirect/main/install.sh
+less install.sh
+bash install.sh --target /var/www/html/wp-content/plugins/llm-auto-redirect
+```
+
+Trusted one-line install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SPhillips1337/LLM-Auto-Redirect/main/install.sh | bash -s -- --target /var/www/html/wp-content/plugins/llm-auto-redirect
+```
+
+If you are already inside a clone of this repository, run:
+
+```bash
+./install.sh
+```
+
+The installer validates that existing non-empty targets are this plugin before updating them. Use `--force` only after verifying the target directory is safe to update.
+
+=== Manual Install ===
+
+Create a folder named `llm-auto-redirect` in your `/wp-content/plugins/` directory.
+
+Place the plugin files from this repository into that folder, including `LLM_Auto_Redirect.php`.
 
 Activate the "LLM Auto Redirect" plugin through the 'Plugins' menu in WordPress.
 
 Go to Tools -> LLM Auto Redirect.
 
-Get an API key for Google AI's Gemini Pro model.
-
-Enter your API key into the settings field and click "Save Changes".
+Configure your preferred LLM provider and save changes.
 
 You can now start using the suggestion feature!
