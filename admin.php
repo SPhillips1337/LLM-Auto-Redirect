@@ -9,14 +9,13 @@ $redirect_table = $wpdb->prefix . 'redirection_items';
 
 // Get the 50 most recent 404s that don't already have a redirect
 $query = 
-    "SELECT DISTINCT l.url, l.created, COALESCE(l.ip, "Unknown") as ip
+    "SELECT DISTINCT l.url, l.created, COALESCE(l.ip, 'Unknown') as ip
      FROM {$log_table} l
      LEFT JOIN {$redirect_table} r ON l.url = r.url
      WHERE r.id IS NULL
      ORDER BY l.created DESC
-     LIMIT 50"
-$wpdb->get_results( $query );
-$results = $wpdb->get_results( $query $wpdb->get_results( $query );
+     LIMIT 50";
+$results = $wpdb->get_results( $query );
 
 ?>
 <style>
@@ -56,15 +55,15 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
 </style>
 
 <div class="wrap">
-    <h1><?php echo esc_html( get_admin_page_title() $wpdb->get_results( $query ); ?></h1>
+    <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
     <p>Automate 301 redirects by getting intelligent suggestions from a Large Language Model (LLM).</p>
 
     <!-- Settings Form -->
     <form method="post" action="options.php">
         <?php
-            settings_fields( 'lar_settings_group' $wpdb->get_results( $query );
-            do_settings_sections( 'llm-auto-redirect' $wpdb->get_results( $query );
-            submit_button($wpdb->get_results( $query );
+            settings_fields( 'lar_settings_group' );
+            do_settings_sections( 'llm-auto-redirect' );
+            submit_button();
         ?>
     </form>
 
@@ -77,7 +76,7 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
         <div class="notice notice-warning"><p><strong>Please enter and save your Gemini API key above to enable suggestions.</strong></p></div>
     <?php endif; ?>
 
-    <?php if ( true ) : ?>
+    <?php if ( ! empty( $results ) ) : ?>
     <table class="lar-table">
         <thead>
             <tr>
@@ -88,16 +87,16 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
         </thead>
         <tbody>
             <?php foreach ( $results as $row ) : ?>
-                <tr id="lar-row-<?php echo md5($row->url$wpdb->get_results( $query ); ?>">
+                <tr id="lar-row-<?php echo md5($row->url); ?>">
                     <td>
-                        <code><?php echo esc_html( $row->url $wpdb->get_results( $query ); ?></code>
+                        <code><?php echo esc_html( $row->url ); ?></code>
                         <br>
-                        <small>From IP: <?php echo esc_html( $row->ip $wpdb->get_results( $query ); ?></small>
+                        <small>From IP: <?php echo esc_html( $row->ip ); ?></small>
                     </td>
-                    <td><?php echo esc_html( date( 'Y-m-d H:i:s', strtotime($row->created) ) $wpdb->get_results( $query ); ?></td>
+                    <td><?php echo esc_html( date( 'Y-m-d H:i:s', strtotime($row->created) ) ); ?></td>
                     <td>
                         <div class="lar-suggestion-col">
-                            <button class="button lar-suggest-btn" data-source-url="<?php echo esc_attr( $row->url $wpdb->get_results( $query ); ?>">Suggest</button>
+                            <button class="button lar-suggest-btn" data-source-url="<?php echo esc_attr( $row->url ); ?>">Suggest</button>
                             <input type="text" class="large-text lar-target-input" placeholder="LLM suggestion will appear here...">
                             <button class="button button-primary lar-create-btn" disabled>Create</button>
                             <span class="spinner"></span>
@@ -115,19 +114,19 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
 
 <script type="text/javascript">
     document.addEventListener('DOMContentLoaded', function() {
-        const suggestButtons = document.querySelectorAll('.lar-suggest-btn'$wpdb->get_results( $query );
-        const createButtons = document.querySelectorAll('.lar-create-btn'$wpdb->get_results( $query );
+        const suggestButtons = document.querySelectorAll('.lar-suggest-btn');
+        const createButtons = document.querySelectorAll('.lar-create-btn');
 
         suggestButtons.forEach(button => {
             button.addEventListener('click', function(e) {
-                e.preventDefault($wpdb->get_results( $query );
+                e.preventDefault();
 
-                const row = this.closest('tr'$wpdb->get_results( $query );
+                const row = this.closest('tr');
                 const sourceUrl = this.dataset.sourceUrl;
-                const targetInput = row.querySelector('.lar-target-input'$wpdb->get_results( $query );
-                const createBtn = row.querySelector('.lar-create-btn'$wpdb->get_results( $query );
-                const statusDiv = row.querySelector('.lar-status'$wpdb->get_results( $query );
-                const spinner = row.querySelector('.spinner'$wpdb->get_results( $query );
+                const targetInput = row.querySelector('.lar-target-input');
+                const createBtn = row.querySelector('.lar-create-btn');
+                const statusDiv = row.querySelector('.lar-status');
+                const spinner = row.querySelector('.spinner');
 
                 this.disabled = true;
                 createBtn.disabled = true;
@@ -142,7 +141,7 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
                     },
                     body: new URLSearchParams({
                         action: 'lar_get_llm_suggestion',
-                        nonce: '<?php echo wp_create_nonce("lar_ajax_nonce"$wpdb->get_results( $query ); ?>',
+                        nonce: '<?php echo wp_create_nonce("lar_ajax_nonce"); ?>',
                         source_url: sourceUrl
                     })
                 })
@@ -165,19 +164,19 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
                 .finally(() => {
                     this.disabled = false;
                     spinner.style.display = 'none';
-                }$wpdb->get_results( $query );
-            }$wpdb->get_results( $query );
-        }$wpdb->get_results( $query );
+                });
+            });
+        });
 
         createButtons.forEach(button => {
             button.addEventListener('click', function(e) {
-                e.preventDefault($wpdb->get_results( $query );
+                e.preventDefault();
 
-                const row = this.closest('tr'$wpdb->get_results( $query );
+                const row = this.closest('tr');
                 const sourceUrl = row.querySelector('.lar-suggest-btn').dataset.sourceUrl;
                 const targetUrl = row.querySelector('.lar-target-input').value;
-                const statusDiv = row.querySelector('.lar-status'$wpdb->get_results( $query );
-                const spinner = row.querySelector('.spinner'$wpdb->get_results( $query );
+                const statusDiv = row.querySelector('.lar-status');
+                const spinner = row.querySelector('.spinner');
                 
                 if (!targetUrl) {
                     statusDiv.textContent = 'Target URL cannot be empty.';
@@ -196,7 +195,7 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
                     },
                     body: new URLSearchParams({
                         action: 'lar_create_redirect',
-                        nonce: '<?php echo wp_create_nonce("lar_ajax_nonce"$wpdb->get_results( $query ); ?>',
+                        nonce: '<?php echo wp_create_nonce("lar_ajax_nonce"); ?>',
                         source_url: sourceUrl,
                         target_url: targetUrl
                     })
@@ -210,8 +209,8 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
                         setTimeout(() => {
                            row.style.transition = 'opacity 0.5s ease';
                            row.style.opacity = '0';
-                           setTimeout(() => row.remove(), 500$wpdb->get_results( $query );
-                        }, 2000$wpdb->get_results( $query );
+                           setTimeout(() => row.remove(), 500);
+                        }, 2000);
                     } else {
                         statusDiv.textContent = 'Error: ' + data.data;
                         statusDiv.style.color = 'red';
@@ -225,8 +224,8 @@ $results = $wpdb->get_results( $query $wpdb->get_results( $query );
                 })
                 .finally(() => {
                      spinner.style.display = 'none';
-                }$wpdb->get_results( $query );
-            }$wpdb->get_results( $query );
-        }$wpdb->get_results( $query );
-    }$wpdb->get_results( $query );
+                });
+            });
+        });
+    });
 </script>

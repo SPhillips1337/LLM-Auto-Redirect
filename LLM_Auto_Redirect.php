@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       LLM Auto Redirect
  * Description:       Uses an LLM to suggest intelligent redirects for 404 errors found by the Redirection plugin.
- * Version:           1.3.0
+ * Version:           1.3.2
  * Author:            Gemini
  * License:           GPL-2.0+
  * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
@@ -81,6 +81,12 @@ class LLM_Auto_Redirect {
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
             'default' => 'gpt-4o-mini'
+        ]);
+
+        register_setting( 'lar_settings_group', 'lar_openai_json_schema', [
+            'type' => 'boolean',
+            'sanitize_callback' => 'rest_sanitize_boolean',
+            'default' => false
         ]);
         
         register_setting( 'lar_settings_group', 'lar_openrouter_api_key', [
@@ -167,6 +173,14 @@ class LLM_Auto_Redirect {
             'llm-auto-redirect',
             'lar_settings_section'
         );
+
+        add_settings_field(
+            'lar_openai_json_schema',
+            'OpenAI JSON Schema',
+            [ $this, 'render_openai_json_schema_field' ],
+            'llm-auto-redirect',
+            'lar_settings_section'
+        );
         
         add_settings_field(
             'lar_openrouter_api_key',
@@ -247,6 +261,12 @@ class LLM_Auto_Redirect {
         $url = get_option('lar_openai_base_url', 'https://api.openai.com/v1');
         echo '<input type="text" name="lar_openai_base_url" value="' . esc_attr( $url ) . '" class="regular-text">';
         echo '<p class="description">Base URL for OpenAI-compatible API (e.g., https://api.openai.com/v1, https://api.groq.com/openai/v1)</p>';
+    }
+
+    public function render_openai_json_schema_field() {
+        $enabled = get_option('lar_openai_json_schema', false);
+        echo '<input type="checkbox" name="lar_openai_json_schema" value="1" ' . checked(1, $enabled, false) . '>';
+        echo '<p class="description">Enforce JSON Structured Output (forces reasoning/thinking models like DeepSeek-R1 in LM Studio or newer OpenAI models to constrain their response to strict JSON structure)</p>';
     }
     
     public function render_openrouter_key_field() {
@@ -627,6 +647,28 @@ class LLM_Auto_Redirect {
         }
 
         $suggested_url = trim($response);
+
+        // Remove thinking/thought/reasoning blocks if present
+        $suggested_url = preg_replace('/<(thinking|thought|reasoning)>.*?<\/\\1>/is', '', $suggested_url);
+
+        // Strip out common markdown wrapping if present
+        if (preg_match('/```json\s*(.*?)\s*```/is', $suggested_url, $matches)) {
+            $suggested_url = $matches[1];
+        }
+
+        // Try parsing as JSON (in case it is JSON-formatted but wasn't parsed in provider call, or is wrapped in markdown)
+        $json_data = json_decode($suggested_url, true);
+        if (is_array($json_data) && isset($json_data['suggestion'])) {
+            $suggested_url = $json_data['suggestion'];
+        }
+
+        $suggested_url = trim($suggested_url);
+
+        // Extract the first string that looks like a valid URL
+        if (preg_match('/https?:\/\/[^\s"\'><\(\)\[\]]+/i', $suggested_url, $matches)) {
+            $suggested_url = trim($matches[0]);
+        }
+
         if (!filter_var($suggested_url, FILTER_VALIDATE_URL)) {
             return new WP_Error('invalid_url', 'LLM returned invalid URL: ' . $suggested_url);
         }
@@ -667,23 +709,56 @@ class LLM_Auto_Redirect {
         $api_key = get_option('lar_openai_api_key');
         $model = get_option('lar_openai_model', 'gpt-4o-mini');
         $base_url = rtrim(get_option('lar_openai_base_url', 'https://api.openai.com/v1'), '/');
-        if (empty($api_key)) {
+        
+        // Only require API key if using official OpenAI endpoint
+        if (empty($api_key) && strpos($base_url, 'api.openai.com') !== false) {
             return new WP_Error('openai_key', 'OpenAI API key not set');
         }
 
-        $response = wp_remote_post($base_url . '/chat/completions', [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $api_key
+        $headers = [
+            'Content-Type' => 'application/json',
+        ];
+        if (!empty($api_key)) {
+            $headers['Authorization'] = 'Bearer ' . $api_key;
+        }
+
+        $use_json = get_option('lar_openai_json_schema', false);
+
+        $body_params = [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'system', 'content' => $system_prompt],
+                ['role' => 'user', 'content' => $user_prompt]
             ],
-            'body' => json_encode([
-                'model' => $model,
-                'messages' => [
-                    ['role' => 'system', 'content' => $system_prompt],
-                    ['role' => 'user', 'content' => $user_prompt]
-                ],
-                'max_tokens' => 100
-            ]),
+            'max_tokens' => 2048
+        ];
+
+        if ($use_json) {
+            $system_prompt .= " You must return a JSON object matching this schema: {\"suggestion\": \"URL\"}. Do not include markdown formatting or any other text.";
+            $body_params['messages'][0]['content'] = $system_prompt;
+            $body_params['response_format'] = [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => 'redirect_suggestion',
+                    'strict' => true,
+                    'schema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'suggestion' => [
+                                'type' => 'string',
+                                'description' => 'The complete, absolute destination URL for the redirect.'
+                            ]
+                        ],
+                        'required' => ['suggestion'],
+                        'additionalProperties' => false
+                    ]
+                ]
+            ];
+        }
+
+        $response = wp_remote_post($base_url . '/chat/completions', [
+            'headers' => $headers,
+            'body' => json_encode($body_params),
             'timeout' => 30,
         ]);
 
@@ -695,7 +770,15 @@ class LLM_Auto_Redirect {
         $data = json_decode($body, true);
         
         if (isset($data['choices'][0]['message']['content'])) {
-            return $data['choices'][0]['message']['content'];
+            $content = $data['choices'][0]['message']['content'];
+            if (empty(trim($content))) {
+                if (isset($data['choices'][0]['message']['reasoning_content'])) {
+                    $content = $data['choices'][0]['message']['reasoning_content'];
+                } elseif (isset($data['choices'][0]['message']['thought'])) {
+                    $content = $data['choices'][0]['message']['thought'];
+                }
+            }
+            return $content;
         }
         
         return new WP_Error('openai_parse', 'Could not parse OpenAI response');
@@ -743,7 +826,15 @@ class LLM_Auto_Redirect {
         }
         
         if (isset($data['choices'][0]['message']['content'])) {
-            return $data['choices'][0]['message']['content'];
+            $content = $data['choices'][0]['message']['content'];
+            if (empty(trim($content))) {
+                if (isset($data['choices'][0]['message']['reasoning_content'])) {
+                    $content = $data['choices'][0]['message']['reasoning_content'];
+                } elseif (isset($data['choices'][0]['message']['thought'])) {
+                    $content = $data['choices'][0]['message']['thought'];
+                }
+            }
+            return $content;
         }
         
         return new WP_Error('openrouter_parse', 'Could not parse OpenRouter response. Response: ' . substr($body, 0, 200));

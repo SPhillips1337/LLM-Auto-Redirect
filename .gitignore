@@ -2,3 +2,10 @@ test-*.php
 debug*.php
 add-test-404.php
 admin-minimal.php
+
+# Local coordination metadata
+.agent-manifest.json
+.agent-status.md
+.agent-tasks.json
+.agent-session.json
+setup-prompt.txt
